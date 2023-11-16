@@ -12,6 +12,8 @@ from .coupled_optimizer_trainer import (
     CoupledOptimizerTrainerConfig,
 )
 
+from .hievae_trainer import HieVAETrainer, HieVAETrainerConfig
+
 __all__ = [
     "BaseTrainer",
     "BaseTrainerConfig",
@@ -21,4 +23,6 @@ __all__ = [
     "AdversarialTrainerConfig",
     "CoupledOptimizerAdversarialTrainer",
     "CoupledOptimizerAdversarialTrainerConfig",
+    "HieVAETrainer",
+    "HieVAETrainerConfig",
 ]

@@ -236,7 +236,15 @@ class TrainingPipeline(Pipeline):
                 training_config=self.training_config,
                 callbacks=callbacks,
             )
-
+        elif isinstance(self.training_config, HieVAETrainerConfig):
+            logger.info("Using HieVAE Trainer\n")
+            trainer = HieVAETrainer(
+                model=self.model,
+                train_dataset=train_dataloader or train_dataset,
+                eval_dataset=eval_dataloader or eval_dataset,
+                training_config=self.training_config,
+                callbacks=callbacks,
+            )
         elif isinstance(self.training_config, BaseTrainerConfig):
             logger.info("Using Base Trainer\n")
             trainer = BaseTrainer(

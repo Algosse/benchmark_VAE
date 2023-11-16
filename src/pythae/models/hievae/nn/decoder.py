@@ -95,7 +95,7 @@ class DecoderBlock(nn.Module):
         
         return x, kl
     
-class HVAEDecoder(BaseDecoder):
+class HieVAEDecoder(BaseDecoder):
     
     def __init__(self, model_config: HieVAEConfig):
         super().__init__()
@@ -187,7 +187,7 @@ if __name__ == '__main__':
         input_dim=(3,64,64),
     )
     
-    decoder = HVAEDecoder(config)
+    decoder = HieVAEDecoder(config)
     
     #print(decoder)
     

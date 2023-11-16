@@ -49,7 +49,7 @@ class Block(nn.Module):
 
         return out
     
-class HVAEEncoder(BaseEncoder):
+class HieVAEEncoder(BaseEncoder):
     
     def __init__(self, model_config: HieVAEConfig):
         super().__init__()
@@ -96,7 +96,7 @@ if __name__ == '__main__':
         nb_blocks=[2,2,2,2],
     )
     
-    encoder = HVAEEncoder(config)
+    encoder = HieVAEEncoder(config)
     print(encoder)
     
     x = torch.randn(1, 3, 64, 64)

@@ -1,7 +1,7 @@
 from . import utils
-from .encoder import HVAEEncoder
-from .decoder import HVAEDecoder
+from .encoder import HieVAEEncoder
+from .decoder import HieVAEDecoder
 from .swin_transformer_config import SwinTransformerConfig
 from .swin_transformer_encoder import SequenceSwinTransformer
 
-__all__ = ['HVAEEncoder', 'HVAEDecoder', 'utils', 'SwinTransformerConfig', 'SequenceSwinTransformer']
+__all__ = ['HieVAEEncoder', 'HieVAEDecoder', 'utils', 'SwinTransformerConfig', 'SequenceSwinTransformer']
