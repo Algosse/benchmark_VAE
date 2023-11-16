@@ -7,5 +7,6 @@
 """
 
 from .datasets import BaseDataset
+from .datasets_wrapper import SIARDatasetWrapper, MNISTDatasetWrapper, CelebADatasetWrapper
 
-__all__ = ["BaseDataset"]
+__all__ = ["BaseDataset", "SIARDatasetWrapper", "MNISTDatasetWrapper", "CelebADatasetWrapper"]

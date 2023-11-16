@@ -179,7 +179,14 @@ class AutoConfig(BaseConfig):
             from ..piwae import PIWAEConfig
 
             model_config = PIWAEConfig.from_json_file(json_path)
+        elif config_name == "SCVAEConfig":
+            from ..SCVAE import SCVAEConfig
 
+            model_config = SCVAEConfig.from_json_file(json_path)
+        elif config_name == "HieVAEConfig":
+            from ..hievae import HieVAEConfig
+
+            model_config = HieVAEConfig.from_json_file(json_path)
         else:
             raise NameError(
                 "Cannot reload automatically the model configuration... "

@@ -193,7 +193,14 @@ class AutoModel(nn.Module):
             from ..piwae import PIWAE
 
             model = PIWAE.load_from_folder(dir_path=dir_path)
+        elif model_name == "SCVAEConfig":
+            from ..SCVAE import SCVAE
 
+            model = SCVAE.load_from_folder(dir_path=dir_path)
+        elif model_name == "HieVAEConfig":
+            from ..hivae import HieVAE
+
+            model = HieVAE.load_from_folder(dir_path=dir_path)
         else:
             raise NameError(
                 "Cannot reload automatically the model... "
