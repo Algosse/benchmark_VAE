@@ -180,7 +180,7 @@ class AutoConfig(BaseConfig):
 
             model_config = PIWAEConfig.from_json_file(json_path)
         elif config_name == "SCVAEConfig":
-            from ..SCVAE import SCVAEConfig
+            from ..scvae import SCVAEConfig
 
             model_config = SCVAEConfig.from_json_file(json_path)
         elif config_name == "HieVAEConfig":
