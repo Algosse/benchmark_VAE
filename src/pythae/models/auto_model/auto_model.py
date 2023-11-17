@@ -194,11 +194,11 @@ class AutoModel(nn.Module):
 
             model = PIWAE.load_from_folder(dir_path=dir_path)
         elif model_name == "SCVAEConfig":
-            from ..SCVAE import SCVAE
+            from ..scvae import SCVAE
 
             model = SCVAE.load_from_folder(dir_path=dir_path)
         elif model_name == "HieVAEConfig":
-            from ..hivae import HieVAE
+            from ..hievae import HieVAE
 
             model = HieVAE.load_from_folder(dir_path=dir_path)
         else:
