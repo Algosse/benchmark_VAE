@@ -198,9 +198,9 @@ class AutoModel(nn.Module):
 
             model = SCVAE.load_from_folder(dir_path=dir_path)
         elif model_name == "HieVAEConfig":
-            from ..hievae import HieVAE
+            from ..hievae import PriorHieVAE
 
-            model = HieVAE.load_from_folder(dir_path=dir_path)
+            model = PriorHieVAE.load_from_folder(dir_path=dir_path)
         else:
             raise NameError(
                 "Cannot reload automatically the model... "

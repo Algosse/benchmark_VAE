@@ -1,3 +1,6 @@
+from pythae.models.hievae.nn.decoder import HieVAEDecoder
+from pythae.models.hievae.nn.swin_transformer_config import SwinTransformerConfig
+from pythae.models.hievae.nn.swin_transformer_encoder import SequenceSwinTransformer
 import torch
 import torch.nn.functional as F
 
@@ -10,6 +13,11 @@ from pythae.data.datasets import BaseDataset
 from ..base import BaseAE
 
 from .nn.utils import DmolNet
+
+import os
+from ..base.base_utils import (
+    CPU_Unpickler,
+)
 
 class PriorHieVAE(BaseAE):
     
@@ -112,3 +120,44 @@ class PriorHieVAE(BaseAE):
         return (distortion_per_pixel + rate_per_pixel).mean(dim=0), distortion_per_pixel.mean(dim=0), rate_per_pixel.mean(dim=0)
         
 
+    @classmethod
+    def load_from_folder(cls, dir_path):
+        """Class method to be used to load the model from a specific folder
+
+        Args:
+            dir_path (str): The path where the model should have been be saved.
+
+        .. note::
+            This function requires the folder to contain:
+
+            - | a ``model_config.json`` and a ``model.pt`` if no custom architectures were provided
+
+            **or**
+
+            - | a ``model_config.json``, a ``model.pt`` and a ``encoder.pkl`` (resp.
+                ``decoder.pkl``) if a custom encoder (resp. decoder) was provided
+        """
+
+        model_config = HieVAEConfig.from_json_file(os.path.join(dir_path, 'model_config.json'))
+
+        # drop qk_scale from encoder_config dict
+        encoder_config = model_config.encoder_config
+        if encoder_config['qk_scale'] == None:
+            encoder_config.pop('qk_scale')
+        
+        prior_config = SwinTransformerConfig.from_dict(encoder_config)
+        
+        encoder_config = SwinTransformerConfig(**prior_config.to_dict())
+        encoder_config.sequence_size += 1
+
+        encoder = SequenceSwinTransformer(model_config, encoder_config)
+        prior = SequenceSwinTransformer(model_config, prior_config)
+        decoder = HieVAEDecoder(model_config)
+        
+        model = PriorHieVAE(model_config, encoder, decoder, prior)
+        
+        state_dict = torch.load(os.path.join(dir_path, 'model.pt'))
+        model.load_state_dict(state_dict['model_state_dict'])
+
+        return model
+    

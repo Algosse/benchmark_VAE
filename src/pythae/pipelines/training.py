@@ -259,3 +259,19 @@ class TrainingPipeline(Pipeline):
 
         self.trainer = trainer
         trainer.train()
+
+    @classmethod
+    def load_from_folder(cls, folder_path: str):
+        """
+        Load a trained model from a folder.
+
+        Args:
+            folder_path (str): The path to the folder containing the trained model.
+
+        Returns:
+            A :class:`~pythae.models.BaseAE` instance.
+        """
+        from ..models import AutoModel
+
+        model = AutoModel.load_from_folder(folder_path)
+        return cls(model=model)
