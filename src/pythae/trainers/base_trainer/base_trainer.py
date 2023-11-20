@@ -154,6 +154,9 @@ class BaseTrainer:
             logger.info("Model passed sanity check !\n" "Ready for training.\n")
 
         self.model = model
+        
+        # Used to load a checkpoint and check if model starts from scratch or use a checkpoint
+        self.load_folder = None
 
     @property
     def is_main_process(self):
@@ -237,6 +240,11 @@ class BaseTrainer:
                 self.model.parameters(), lr=self.training_config.learning_rate
             )
 
+        if self.load_folder is not None:
+            optimizer.load_state_dict(
+                torch.load(os.path.join(self.load_folder, "optimizer.pt"))
+            )
+
         self.optimizer = optimizer
 
     def set_scheduler(self):
@@ -250,36 +258,52 @@ class BaseTrainer:
             else:
                 scheduler = scheduler_cls(self.optimizer)
 
+            if self.load_folder is not None:
+                scheduler.load_state_dict(
+                    torch.load(os.path.join(self.load_folder, "scheduler.pt"))
+                )
+
         else:
             scheduler = None
+            
 
         self.scheduler = scheduler
 
     def _set_output_dir(self):
-        # Create folder
-        if not os.path.exists(self.training_config.output_dir) and self.is_main_process:
-            os.makedirs(self.training_config.output_dir, exist_ok=True)
+        
+        if self.load_folder is not None:
+            training_dir = "/".join(self.load_folder.split("/")[:-1])
+            self.training_dir = training_dir
+            
             logger.info(
-                f"Created {self.training_config.output_dir} folder since did not exist.\n"
+                f"Loaded checkpoint from {self.load_folder}\n"
+                "Training will resume from here.\n"
+            )
+        else:
+            # Create folder
+            if not os.path.exists(self.training_config.output_dir) and self.is_main_process:
+                os.makedirs(self.training_config.output_dir, exist_ok=True)
+                logger.info(
+                    f"Created {self.training_config.output_dir} folder since did not exist.\n"
+                )
+
+            self._training_signature = (
+                str(datetime.datetime.now())[0:19].replace(" ", "_").replace(":", "-")
             )
 
-        self._training_signature = (
-            str(datetime.datetime.now())[0:19].replace(" ", "_").replace(":", "-")
-        )
-
-        training_dir = os.path.join(
-            self.training_config.output_dir,
-            f"{self.model_name}_training_{self._training_signature}",
-        )
-
-        self.training_dir = training_dir
-
-        if not os.path.exists(training_dir) and self.is_main_process:
-            os.makedirs(training_dir, exist_ok=True)
-            logger.info(
-                f"Created {training_dir}. \n"
-                "Training config, checkpoints and final model will be saved here.\n"
+            training_dir = os.path.join(
+                self.training_config.output_dir,
+                f"{self.model_name}_training_{self._training_signature}",
             )
+
+            self.training_dir = training_dir
+
+            if not os.path.exists(training_dir) and self.is_main_process:
+                os.makedirs(training_dir, exist_ok=True)
+                logger.info(
+                    f"Created {training_dir}. \n"
+                    "Training config, checkpoints and final model will be saved here.\n"
+                )
 
     def _get_file_logger(self, log_output_dir):
         log_dir = log_output_dir
@@ -436,15 +460,26 @@ class BaseTrainer:
             file_logger = self._get_file_logger(log_output_dir=log_output_dir)
 
             file_logger.info(msg)
+            
+        if self.load_folder is not None:
+            checkpoint = self.load_folder.split("/")[-1]
+            start_epoch = int(checkpoint.split("_")[-1]) + 1
+        else:
+            start_epoch = 1
 
         if self.is_main_process:
-            logger.info("Successfully launched training !\n")
+            if self.load_folder is None:
+                logger.info("Successfully launched training !\n")
+            else:
+                logger.info(f"Successfully resumed training !\n"
+                            f"Loaded checkpoint from {self.load_folder}\n"
+                            f"resume at epoch {start_epoch}\n")
 
         # set best losses for early stopping
         best_train_loss = 1e10
         best_eval_loss = 1e10
 
-        for epoch in range(1, self.training_config.num_epochs + 1):
+        for epoch in range(start_epoch, self.training_config.num_epochs + 1):
             self.callback_handler.on_epoch_begin(
                 training_config=self.training_config,
                 epoch=epoch,
@@ -703,6 +738,8 @@ class BaseTrainer:
 
         # save training config
         self.training_config.save_json(checkpoint_dir, "training_config")
+        
+        self.callback_handler.on_save_checkpoint(self.training_config)
 
     def predict(self, model: BaseAE):
         model.eval()
@@ -729,3 +766,10 @@ class BaseTrainer:
             reconstructions,
             normal_generation,
         )
+
+    def resume_training(self, load_folder):
+        """ Initiate training from a checkpoint """
+        
+        self.load_folder = load_folder
+        
+        self.train()

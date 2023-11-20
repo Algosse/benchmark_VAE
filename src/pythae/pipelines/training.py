@@ -2,6 +2,9 @@ import logging
 from typing import List, Optional, Union
 
 import numpy as np
+import os
+
+from pythae.models.auto_model.auto_config import AutoConfig
 import torch
 
 from ..customexception import DatasetError
@@ -40,12 +43,18 @@ class TrainingPipeline(Pipeline):
         training_config (Optional[BaseTrainerConfig]): An instance of
             :class:`~pythae.trainers.BaseTrainerConfig` stating the training
             parameters. If None, a default configuration is used.
+        
+        load_folder (Optional[str]): The path to the folder containing the trained model.
+            If one wants to resume training, specify the path to the folder contraining the checkpoint
+            You also have to pass a trained model and the training config used to train it. (you can use the static method load_from_folder to help)
+            Default: None.
     """
 
     def __init__(
         self,
         model: Optional[BaseAE],
         training_config: Optional[BaseTrainerConfig] = None,
+        load_folder: Optional[str] = None,
     ):
         if training_config is None:
             if model.model_name == "RAE_L2":
@@ -107,6 +116,7 @@ class TrainingPipeline(Pipeline):
         self.data_processor = DataProcessor()
         self.model = model
         self.training_config = training_config
+        self.load_folder = load_folder
 
     def _check_dataset(self, dataset: BaseDataset):
         try:
@@ -258,10 +268,14 @@ class TrainingPipeline(Pipeline):
             raise ValueError("The provided training config is not supported.")
 
         self.trainer = trainer
-        trainer.train()
+        
+        if self.load_folder:
+            trainer.resume_training(self.load_folder)
+        else:
+            trainer.train()
 
     @classmethod
-    def load_from_folder(cls, folder_path: str):
+    def load_from_folder(cls, folder_path: str, training_config: Optional[BaseTrainerConfig] = None):
         """
         Load a trained model from a folder.
 
@@ -271,7 +285,22 @@ class TrainingPipeline(Pipeline):
         Returns:
             A :class:`~pythae.models.BaseAE` instance.
         """
+        
+        folder_split = folder_path.split("/")
+        checkpoint_folder = folder_split[-1]
+        assert checkpoint_folder.startswith("checkpoint_epoch_"), "The training has to resume from a checkpoint folder"
+        
+        # load the model with its state dict
         from ..models import AutoModel
-
         model = AutoModel.load_from_folder(folder_path)
-        return cls(model=model)
+        
+        # load training config
+        # TODO: Add somewhere a method that filter the config name to use the appropriate config
+        # Look AutoModel and AutoConfig as example
+        if training_config is None:
+            """ Load the training config from the folder """
+            training_config = HieVAETrainerConfig.from_json_file(
+                os.path.join(folder_path, "training_config.json")
+            )
+        
+        return cls(model=model, training_config=training_config, load_folder=folder_path)

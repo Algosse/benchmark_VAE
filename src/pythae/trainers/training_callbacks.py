@@ -105,6 +105,11 @@ class TrainingCallback:
         """
         Event called after a checkpoint save.
         """
+    
+    def on_save_checkpoint(self, training_config: BaseTrainerConfig, **kwargs):
+        """
+        Event called after a checkpoint save.
+        """
 
     def on_log(self, training_config: BaseTrainerConfig, logs, **kwargs):
         """
@@ -172,6 +177,9 @@ class CallbackHandler:
 
     def on_save(self, training_config: BaseTrainerConfig, **kwargs):
         self.call_event("on_save", training_config, **kwargs)
+        
+    def on_save_checkpoint(self, training_config: BaseTrainerConfig, **kwargs):
+        self.call_event("on_save_checkpoint", training_config, **kwargs)
 
     def on_log(self, training_config: BaseTrainerConfig, logs, **kwargs):
         self.call_event("on_log", training_config, logs=logs, **kwargs)
@@ -327,6 +335,8 @@ class WandbCallback(TrainingCallback):  # pragma: no cover
         model_config: BaseAEConfig = None,
         project_name: str = "pythae_experiment",
         entity_name: str = None,
+        resume_id: str = None,
+        resume_step: int = None,
         **kwargs,
     ):
         """
@@ -359,10 +369,23 @@ class WandbCallback(TrainingCallback):  # pragma: no cover
             )
 
         else:
-            self._wandb.config.update({**training_config_dict})
+            self._wandb.config.update({**training_config_dict})    
 
         self._wandb.define_metric("train/global_step")
         self._wandb.define_metric("*", step_metric="train/global_step", step_sync=True)
+        
+        if resume_id is not None:
+            if resume_step is None:
+                raise ValueError("You must provide a resume_step if you provide a resume_id")
+
+            api = self._wandb.Api()
+            old_run = api.run(f"{resume_id}")
+            old_run_rows = [row for row in old_run.scan_history()]
+            # TODO: Find a way to get the global step
+            i = 0
+            while old_run_rows[i]['train/global_step'] <= resume_step:
+                self.run.log(old_run_rows[i])
+                i += 1
 
     def on_train_begin(self, training_config: BaseTrainerConfig, **kwargs):
         model_config = kwargs.pop("model_config", None)

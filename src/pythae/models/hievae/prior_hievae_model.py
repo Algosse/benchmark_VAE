@@ -144,11 +144,19 @@ class PriorHieVAE(BaseAE):
         encoder_config = model_config.encoder_config
         if encoder_config['qk_scale'] == None:
             encoder_config.pop('qk_scale')
+            qk_scale_remove = True
+        else:
+            qk_scale_remove = False
         
         prior_config = SwinTransformerConfig.from_dict(encoder_config)
         
         encoder_config = SwinTransformerConfig(**prior_config.to_dict())
         encoder_config.sequence_size += 1
+
+        if qk_scale_remove:
+            """ Restore qk_scale to None for later loading """
+            encoder_config.qk_scale = None
+            prior_config.qk_scale = None
 
         encoder = SequenceSwinTransformer(model_config, encoder_config)
         prior = SequenceSwinTransformer(model_config, prior_config)
