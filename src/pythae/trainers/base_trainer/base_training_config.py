@@ -30,6 +30,7 @@ class BaseTrainerConfig(BaseConfig):
             training. Default: :class:`~torch.optim.Adam`.
         optimizer_params (dict): A dict containing the parameters to use for the
             `torch.optim.Optimizer`. If None, uses the default parameters. Default: None.
+        gradient_accumulation_steps (int): Number of updates steps to accumulate before performing a backward/update pass. Default: 1
         scheduler_cls (str): The name of the `torch.optim.lr_scheduler` used for
             training. If None, no scheduler is used. Default None.
         scheduler_params (dict): A dict containing the parameters to use for the
@@ -59,6 +60,7 @@ class BaseTrainerConfig(BaseConfig):
     eval_dataloader_num_workers: int = 0
     optimizer_cls: str = "Adam"
     optimizer_params: Union[dict, None] = None
+    gradient_accumulation_steps: int = 1
     scheduler_cls: Union[str, None] = None
     scheduler_params: Union[dict, None] = None
     learning_rate: float = 1e-4
