@@ -244,6 +244,11 @@ class BaseTrainer:
             optimizer.load_state_dict(
                 torch.load(os.path.join(self.load_folder, "optimizer.pt"))
             )
+            
+            # Set a new learning rate if needed
+            if optimizer.param_groups[0]['lr'] != self.training_config.learning_rate:
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = self.training_config.learning_rate
 
         self.optimizer = optimizer
 
