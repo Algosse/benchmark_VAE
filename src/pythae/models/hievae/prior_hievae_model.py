@@ -35,7 +35,7 @@ class PriorHieVAE(BaseAE):
             self.out_net = DmolNet(model_config.features[0], model_config.num_mixtures)
     
     def predict(self, y, **kwargs):
-        y = y[:,:4,...].to(self.device)
+        y = y.to(self.device)
         
         with torch.cuda.amp.autocast(enabled=self.model_config.mixed_precision):
             prior_activations = self.prior(y)['activations']
@@ -55,7 +55,7 @@ class PriorHieVAE(BaseAE):
     def forward(self, inputs: BaseDataset, **kwargs):
         
         x = inputs["data"].to(self.device)
-        y = inputs["label"][:,:4,...].to(self.device)
+        y = inputs["label"].to(self.device)
         
         with torch.cuda.amp.autocast(enabled=self.model_config.mixed_precision):
             activations = self.encoder(y, x)['activations']
