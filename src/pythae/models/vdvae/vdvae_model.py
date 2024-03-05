@@ -137,7 +137,6 @@ class VDVAEDecoder(BaseDecoder):
         dec_blocks = []
         self.widths = get_width_settings(model_config.width, model_config.custom_width_str)
         blocks = parse_layer_string(model_config.dec_blocks)
-        print(len(blocks))
         for idx, (res, mixin) in enumerate(blocks):
             dec_blocks.append(DecBlock(model_config, res, mixin, n_blocks=len(blocks)))
             resos.add(res)
@@ -270,3 +269,48 @@ class VDVAE(BaseAE):
             return elbo, distortion_per_pixel.mean(), rate_per_pixel.mean()
         else:
             raise NotImplementedError("Only dmol reconstruction loss is supported for now.")
+    
+    def sample(self, n, t=None):
+        """Sample from the VDVAE model.
+        
+        Args:
+            n (int): The number of samples to generate.
+            t (torch.Tensor): The temperature of the sampling.
+            
+        Returns:
+            torch.Tensor: The generated samples.
+        """
+        dec_out = self.decoder.forward_uncond(n, t)
+        
+        if self.model_config.reconstruction_loss == "dmol":
+            recon_x = self.out_net.sample(dec_out.recon_x)
+        else:
+            raise NotImplementedError("Only dmol reconstruction loss is supported for now.")
+        
+        return ModelOutput(
+            recon_x=recon_x,
+        )
+        
+if __name__ == "__name__":
+    
+    RES = 28
+    
+    model_config = VDVAEConfig(
+        input_dim=[1, RES, RES],
+        reconstruction_loss="dmol",
+        width=3,
+        custom_width_str=None,
+        enc_blocks=f"28x3,28d2,14x3,14d2,7x3",
+        dec_blocks="7x3,14m7,14x3,28m14,28x3",
+        bottleneck_multiple=1.0,
+        no_bias_above=64,
+    )
+    
+    encoder = VDVAEEncoder(model_config)
+    decoder = VDVAEDecoder(model_config)
+
+    model = VDVAE(model_config, encoder, decoder)
+    
+    x = torch.rand(10, RES, RES, 1)
+    
+    model(x)

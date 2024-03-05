@@ -98,6 +98,13 @@ class TrainingPipeline(Pipeline):
                     "A 'CoupledOptimizerAdversarialTrainer' "
                     "is expected for training a VAEGAN"
                 )
+                
+        elif model.model_name == "VDVAE":
+            if not isinstance(training_config, VDVAETrainerConfig):
+                raise AssertionError(
+                    "A 'VDVAETrainerConfig' "
+                    "is expected for training a VDVAE"
+                )
 
         if not isinstance(training_config, BaseTrainerConfig):
             raise AssertionError(
@@ -236,7 +243,15 @@ class TrainingPipeline(Pipeline):
                 training_config=self.training_config,
                 callbacks=callbacks,
             )
-
+        elif isinstance(self.training_config, VDVAETrainerConfig):
+            logger.info("Using VDVAE Trainer\n")
+            trainer = VDVAETrainer(
+                model=self.model,
+                train_dataset=train_dataloader or train_dataset,
+                eval_dataset=eval_dataloader or eval_dataset,
+                training_config=self.training_config,
+                callbacks=callbacks,
+            )
         elif isinstance(self.training_config, BaseTrainerConfig):
             logger.info("Using Base Trainer\n")
             trainer = BaseTrainer(

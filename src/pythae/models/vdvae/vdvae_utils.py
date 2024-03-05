@@ -6,12 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-@torch.jit.script
 def gaussian_analytical_kl(mu1, mu2, logsigma1, logsigma2):
     return -0.5 + logsigma2 - logsigma1 + 0.5 * (logsigma1.exp() ** 2 + (mu1 - mu2) ** 2) / (logsigma2.exp() ** 2)
 
 
-@torch.jit.script
 def draw_gaussian_diag_samples(mu, logsigma):
     eps = torch.empty_like(mu).normal_(0., 1.)
     return torch.exp(logsigma) * eps + mu
@@ -212,8 +210,4 @@ class DmolNet(nn.Module):
         return xhat.permute(0, 2, 3, 1)
 
     def sample(self, px_z):
-        im = sample_from_discretized_mix_logistic(self.forward(px_z), self.model_config.num_mixtures)
-        xhat = (im + 1.0) * 127.5
-        xhat = xhat.detach().cpu().numpy()
-        xhat = np.minimum(np.maximum(0.0, xhat), 255.0).astype(np.uint8)
-        return xhat
+        return sample_from_discretized_mix_logistic(self.forward(px_z), self.model_config.num_mixtures)

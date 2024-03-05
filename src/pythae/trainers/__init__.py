@@ -11,6 +11,7 @@ from .coupled_optimizer_trainer import (
     CoupledOptimizerTrainer,
     CoupledOptimizerTrainerConfig,
 )
+from .vdvae_trainer import VDVAETrainer, VDVAETrainerConfig
 
 __all__ = [
     "BaseTrainer",
@@ -21,4 +22,6 @@ __all__ = [
     "AdversarialTrainerConfig",
     "CoupledOptimizerAdversarialTrainer",
     "CoupledOptimizerAdversarialTrainerConfig",
+    "VDVAETrainer",
+    "VDVAETrainerConfig",
 ]
