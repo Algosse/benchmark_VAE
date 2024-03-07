@@ -203,11 +203,32 @@ class DmolNet(nn.Module):
         self.out_conv = get_conv(model_config.width, model_config.num_mixtures * 10, kernel_size=1, stride=1, padding=0)
 
     def nll(self, px_z, x):
+        """
+            Args:
+                px_z: (B, C, H, W)
+                x: (B, C, H, W)
+            Output:
+                nll: (B,)
+        """
+        x = x.permute(0, 2, 3, 1).contiguous()
         return discretized_mix_logistic_loss(x=x, l=self.forward(px_z)) # , low_bit=self.H.dataset in ['ffhq_256'])
 
     def forward(self, px_z):
+        """
+            Args:
+                px_z: (B, C, H, W)
+            Output:
+                xhat: (B, H, W, C)
+        """
         xhat = self.out_conv(px_z)
         return xhat.permute(0, 2, 3, 1)
 
     def sample(self, px_z):
-        return sample_from_discretized_mix_logistic(self.forward(px_z), self.model_config.num_mixtures)
+        """
+            Args:
+                px_z: (B, C, H, W)
+            Output:
+                sample: (B, C, H, W)
+        """
+        sample = sample_from_discretized_mix_logistic(self.forward(px_z), self.model_config.num_mixtures)
+        return sample.permute(0, 3, 1, 2)

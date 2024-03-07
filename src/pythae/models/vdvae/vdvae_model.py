@@ -33,8 +33,7 @@ class VDVAEEncoder(BaseEncoder):
         self.enc_blocks = nn.ModuleList(enc_blocks)       
 
     def forward(self, x):
-        # input shape: (batch_size, height, width, channels)
-        x = x.permute(0, 3, 1, 2).contiguous()
+        # input shape: (batch_size, channels, height, width)
         x = self.in_conv(x)
         activations = {}
         activations[x.shape[2]] = x
