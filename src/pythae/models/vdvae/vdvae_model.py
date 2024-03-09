@@ -1,5 +1,6 @@
 import itertools
 import numpy as np
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -8,6 +9,7 @@ import torch.nn.functional as F
 from ..base import BaseAE
 from ..base.base_utils import ModelOutput
 from ...data.datasets import BaseDataset
+from ...customexception import BadInheritanceError
 from ..nn.base_architectures import BaseEncoder, BaseDecoder
 
 from .vdvae_config import VDVAEConfig
@@ -15,12 +17,26 @@ from .vdvae_utils import get_1x1, get_3x3, Block, parse_layer_string, pad_channe
 
 
 class VDVAEEncoder(BaseEncoder):
+    """
+        Encoder for the VDVAE model.
+        Also Prior Encoder when the model is conditioned.
+        
+        The condition y is expected to be a single image with the same resolution as the input data.
+        So the input of the encoder is the concatenation of the input data and the condition.
+        While the input od the prior encoder is only the condition.
+    """
 
-    def __init__(self, model_config: VDVAEConfig):
+    def __init__(self, model_config: VDVAEConfig, is_prior=False):
         super().__init__()
         self.model_config = model_config
+        self.is_prior = is_prior
         
-        self.in_conv = get_3x3(model_config.input_dim[0], model_config.width)
+        if not is_prior and model_config.is_conditioned:
+            # When the model is conditioned, the encoder uses the input data and the label
+            self.in_conv = get_3x3(model_config.input_dim[0] * 2, model_config.width)
+        else:
+            self.in_conv = get_3x3(model_config.input_dim[0], model_config.width)
+
         self.widths = get_width_settings(model_config.width, model_config.custom_width_str)
         enc_blocks = []
         blockstr = parse_layer_string(model_config.enc_blocks)
@@ -32,8 +48,19 @@ class VDVAEEncoder(BaseEncoder):
             b.c4.weight.data *= np.sqrt(1 / n_blocks)
         self.enc_blocks = nn.ModuleList(enc_blocks)       
 
-    def forward(self, x):
-        # input shape: (batch_size, channels, height, width)
+    def forward(self, x, y=None):
+        """
+            Args:
+                x (torch.Tensor): The input data.
+                y (torch.Tensor, Optional): The condition.
+        """
+        
+        if self.model_config.is_conditioned and not self.is_prior:
+            if y is None:
+                raise ValueError("The model is conditioned. The condition y is expected for the encoder.")
+            else:
+                x = torch.cat([x, y], dim=1)
+        
         x = self.in_conv(x)
         activations = {}
         activations[x.shape[2]] = x
@@ -62,27 +89,31 @@ class DecBlock(nn.Module):
         cond_width = int(width * model_config.bottleneck_multiple)
         self.zdim = model_config.latent_dim
         self.enc = Block(width * 2, cond_width, model_config.latent_dim * 2, residual=False, use_3x3=use_3x3)
-        self.prior = Block(width, cond_width, model_config.latent_dim * 2 + width, residual=False, use_3x3=use_3x3, zero_last=True)
+        if model_config.is_conditioned:
+            self.prior = Block(width * 2, cond_width, model_config.latent_dim * 2, residual=False, use_3x3=use_3x3, zero_last=True)
+            self.resnet1 = Block(width, cond_width, width, residual=True, use_3x3=use_3x3, zero_last=True)
+        else:
+            self.prior = Block(width, cond_width, model_config.latent_dim * 2 + width, residual=False, use_3x3=use_3x3, zero_last=True)
         self.z_proj = get_1x1(model_config.latent_dim, width)
         self.z_proj.weight.data *= np.sqrt(1 / n_blocks)
-        self.resnet = Block(width, cond_width, width, residual=True, use_3x3=use_3x3)
-        self.resnet.c4.weight.data *= np.sqrt(1 / n_blocks)
+        self.resnet2 = Block(width, cond_width, width, residual=True, use_3x3=use_3x3)
+        self.resnet2.c4.weight.data *= np.sqrt(1 / n_blocks)
         self.z_fn = lambda x: self.z_proj(x)
 
-    def sample(self, x, acts):
+    def sample(self, x, acts, prior_acts=None):
         qm, qv = self.enc(torch.cat([x, acts], dim=1)).chunk(2, dim=1)
-        feats = self.prior(x)
-        pm, pv, xpp = feats[:, :self.zdim, ...], feats[:, self.zdim:self.zdim * 2, ...], feats[:, self.zdim * 2:, ...]
-        x = x + xpp
+        
+        pm, pv, x = self.compute_prior(x, prior_acts)
+        
         z = draw_gaussian_diag_samples(qm, qv)
         kl = gaussian_analytical_kl(qm, pm, qv, pv)
         return z, x, kl
 
     def sample_uncond(self, x, t=None, lvs=None):
         n, c, h, w = x.shape
-        feats = self.prior(x)
-        pm, pv, xpp = feats[:, :self.zdim, ...], feats[:, self.zdim:self.zdim * 2, ...], feats[:, self.zdim * 2:, ...]
-        x = x + xpp
+        
+        pm, pv, x = self.compute_prior(x)
+        
         if lvs is not None:
             z = lvs
         else:
@@ -90,24 +121,39 @@ class DecBlock(nn.Module):
                 pv = pv + torch.ones_like(pv) * np.log(t)
             z = draw_gaussian_diag_samples(pm, pv)
         return z, x
+    
+    def compute_prior(self, x, prior_acts=None):
+        if self.model_config.is_conditioned:
+            pm, pv = self.prior(torch.cat([x, prior_acts], dim=1)).chunk(2, dim=1)
+            x = self.resnet1(x)
+        else:
+            feats = self.prior(x)
+            pm, pv, xpp = feats[:, :self.zdim, ...], feats[:, self.zdim:self.zdim * 2, ...], feats[:, self.zdim * 2:, ...]
+            x = x + xpp
+        return pm, pv, x
 
-    def get_inputs(self, xs, activations):
+    def get_inputs(self, xs, activations, prior_activations=None):
         acts = activations[self.base]
+        
+        prior_acts = None
+        if self.model_config.is_conditioned:
+            prior_acts = prior_activations[self.base]
+
         try:
             x = xs[self.base]
         except KeyError:
             x = torch.zeros_like(acts)
         if acts.shape[0] != x.shape[0]:
             x = x.repeat(acts.shape[0], 1, 1, 1)
-        return x, acts
+        return x, acts, prior_acts
 
-    def forward(self, xs, activations, get_latents=False):
-        x, acts = self.get_inputs(xs, activations)
+    def forward(self, xs, activations, prior_activations=None, get_latents=False):
+        x, acts, prior_acts = self.get_inputs(xs, activations, prior_activations)
         if self.mixin is not None:
             x = x + F.interpolate(xs[self.mixin][:, :x.shape[1], ...], scale_factor=self.base // self.mixin)
-        z, x, kl = self.sample(x, acts)
+        z, x, kl = self.sample(x, acts, prior_acts)
         x = x + self.z_fn(z)
-        x = self.resnet(x)
+        x = self.resnet2(x)
         xs[self.base] = x
         if get_latents:
             return xs, dict(z=z.detach(), kl=kl)
@@ -147,16 +193,17 @@ class VDVAEDecoder(BaseDecoder):
         self.bias = nn.Parameter(torch.zeros(1, model_config.width, 1, 1))
         self.final_fn = lambda x: x * self.gain + self.bias
 
-    def forward(self, activations, get_latents=False):
+    def forward(self, activations, prior_activations=None, get_latents=False):
         """
         Args:
             activations (ModelOutput): The activations from the encoder.
-            get_latents (bool): Whether to return the latents or not.
+            prior_activations (ModelOutput, Optional): The activations from the prior encoder.
+            get_latents (bool, Optional): Whether to return the latents or not.
         """
         stats = []
         xs = {a.shape[2]: a for a in self.bias_xs}
         for block in self.dec_blocks:
-            xs, block_stats = block(xs, activations, get_latents=get_latents)
+            xs, block_stats = block(xs, activations, prior_activations=prior_activations, get_latents=get_latents)
             stats.append(block_stats)
         xs[self.model_config.input_dim[1]] = self.final_fn(xs[self.model_config.input_dim[1]])
         
@@ -197,6 +244,7 @@ class VDVAEDecoder(BaseDecoder):
 
 class VDVAE(BaseAE):
     """Variational autoencoder using a very deep hierarchical architecture.
+        The architecture is extended to use a prior network for conditional generation.
     
     Args:
         model_config (VDVAEConfig): The configuration of the VDVAE model.
@@ -208,6 +256,7 @@ class VDVAE(BaseAE):
             model_config: VDVAEConfig,
             encoder: BaseEncoder,
             decoder: BaseDecoder,
+            prior_encoder: Optional[BaseEncoder] = None,
             ):
         
         BaseAE.__init__(self, model_config=model_config, decoder=decoder)
@@ -215,6 +264,11 @@ class VDVAE(BaseAE):
         
         self.model_config = model_config
         self.set_encoder(encoder)
+        
+        if model_config.is_conditioned:
+            self.set_prior_encoder(prior_encoder)
+        else:
+            prior_encoder = None
         
         if model_config.reconstruction_loss == "dmol":
             self.out_net = DmolNet(model_config) # Expect images between [-1, 1]
@@ -225,6 +279,17 @@ class VDVAE(BaseAE):
             )
         else:
             raise NotImplementedError("Only dmol and mse reconstruction loss are supported for now.")
+        
+    def set_prior_encoder(self, prior_encoder: BaseEncoder) -> None:
+        """Set the prior encoder of the model"""
+        if not issubclass(type(prior_encoder), BaseEncoder):
+            raise BadInheritanceError(
+                (
+                    "Prior Encoder must inherit from BaseEncoder class from "
+                    "pythae.models.base_architectures.BaseEncoder. Refer to documentation."
+                )
+            )
+        self.prior_encoder = prior_encoder
         
     def forward(self, inputs: BaseDataset, **kwargs):
         """Forward pass of the VDVAE model.
@@ -238,8 +303,15 @@ class VDVAE(BaseAE):
         """
         x = inputs["data"]
         
-        enc_out = self.encoder(x)
-        dec_out = self.decoder(enc_out['activations'])
+        if self.model_config.is_conditioned:
+            # When the model is conditioned, the encoder uses the input data and the label while the prior only the label
+            y = inputs["label"]
+            enc_out = self.encoder(x, y)
+            prior_out = self.prior_encoder(y)
+            dec_out = self.decoder(enc_out['activations'], prior_out['activations'])
+        else:
+            enc_out = self.encoder(x)
+            dec_out = self.decoder(enc_out['activations'])
         # dec_out.stats is a dictionnary containing the kl divergence for each block and sometime the latents
         
         if self.model_config.reconstruction_loss == "dmol":
