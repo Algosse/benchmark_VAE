@@ -244,12 +244,14 @@ class VDVAE(BaseAE):
         
         if self.model_config.reconstruction_loss == "dmol":
             recon_x = self.out_net.sample(dec_out.recon_x)
+            recon_x_for_loss = dec_out.recon_x
         elif self.model_config.reconstruction_loss == "mse":
             recon_x = self.out_net(dec_out.recon_x)
+            recon_x_for_loss = recon_x
         else:
             raise NotImplementedError("Only dmol reconstruction loss is supported for now.")
         
-        loss, distortion, rate = self.loss_function(dec_out.recon_x, x, dec_out.stats)
+        loss, distortion, rate = self.loss_function(recon_x_for_loss, x, dec_out.stats)
         
         return ModelOutput(
             recon_loss=distortion,
