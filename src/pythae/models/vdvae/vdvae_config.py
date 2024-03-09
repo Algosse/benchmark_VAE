@@ -23,7 +23,7 @@ class VDVAEConfig(VAEConfig):
         num_mixtures (int): The number of mixtures to use in the mixture of logistics loss.
     """
 
-    reconstruction_loss: Literal['dmol'] = "dmol"
+    reconstruction_loss: Literal['dmol', 'mse'] = "dmol"
     width: int = 16
     custom_width_str: Optional[str] = "32:16,16:32,8:64,4:128,1:256"
     enc_blocks: str = "32x11,32d2,16x6,16d2,8x6,8d2,4x3,4d4,1x3"

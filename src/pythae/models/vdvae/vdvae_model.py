@@ -218,11 +218,13 @@ class VDVAE(BaseAE):
         
         if model_config.reconstruction_loss == "dmol":
             self.out_net = DmolNet(model_config) # Expect images between [-1, 1]
-        else:
+        elif model_config.reconstruction_loss == "mse":
             self.out_net = nn.Sequential(
                 nn.Conv2d(model_config.width, model_config.input_dim[0], kernel_size=1, stride=1, padding=0),
-                nn.Sigmoid() # resize images to [0, 1]
+                nn.Tanh() # resize images to [-1, 1]
             )
+        else:
+            raise NotImplementedError("Only dmol and mse reconstruction loss are supported for now.")
         
     def forward(self, inputs: BaseDataset, **kwargs):
         """Forward pass of the VDVAE model.
@@ -242,6 +244,8 @@ class VDVAE(BaseAE):
         
         if self.model_config.reconstruction_loss == "dmol":
             recon_x = self.out_net.sample(dec_out.recon_x)
+        elif self.model_config.reconstruction_loss == "mse":
+            recon_x = self.out_net(dec_out.recon_x)
         else:
             raise NotImplementedError("Only dmol reconstruction loss is supported for now.")
         
@@ -258,16 +262,22 @@ class VDVAE(BaseAE):
         
         if self.model_config.reconstruction_loss == "dmol":
             distortion_per_pixel = self.out_net.nll(recon_x, x) # Reconstruction loss
-            rate_per_pixel = torch.zeros_like(distortion_per_pixel)
-            ndims = np.prod(x.shape[1:])
-            for statdict in stats:
-                rate_per_pixel += statdict['kl'].sum(dim=(1, 2, 3))
-            rate_per_pixel /= ndims # KL divergence
-            
-            elbo = (distortion_per_pixel + rate_per_pixel).mean()
-            return elbo, distortion_per_pixel.mean(), rate_per_pixel.mean()
+        elif self.model_config.reconstruction_loss == "mse":
+            distortion_per_pixel = 0.5 * F.mse_loss(
+                recon_x.reshape(x.shape[0], -1),
+                x.reshape(x.shape[0], -1),
+                reduction="none",
+            ).mean(dim=-1)
         else:
-            raise NotImplementedError("Only dmol reconstruction loss is supported for now.")
+            raise NotImplementedError(f"Reconstruction loss {self.model_config.reconstruction_loss} is not supported.")
+        
+        rate_per_pixel = torch.zeros_like(distortion_per_pixel)
+        ndims = np.prod(x.shape[1:])
+        for statdict in stats:
+            rate_per_pixel += statdict['kl'].sum(dim=(1, 2, 3))
+        rate_per_pixel /= ndims # KL divergence
+        elbo = (distortion_per_pixel + rate_per_pixel).mean()
+        return elbo, distortion_per_pixel.mean(), rate_per_pixel.mean()
     
     def sample(self, n, t=None):
         """Sample from the VDVAE model.
@@ -283,8 +293,10 @@ class VDVAE(BaseAE):
         
         if self.model_config.reconstruction_loss == "dmol":
             recon_x = self.out_net.sample(dec_out.recon_x)
+        elif self.model_config.reconstruction_loss == "mse":
+            recon_x = self.out_net(dec_out.recon_x)
         else:
-            raise NotImplementedError("Only dmol reconstruction loss is supported for now.")
+            raise NotImplementedError(f"Reconstruction loss {self.model_config.reconstruction_loss} is not supported.")
         
         return ModelOutput(
             recon_x=recon_x,
