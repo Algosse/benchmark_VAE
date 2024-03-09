@@ -207,7 +207,7 @@ class VDVAE(BaseAE):
     def __init__(self, 
             model_config: VDVAEConfig,
             encoder: BaseEncoder,
-            decoder,
+            decoder: BaseDecoder,
             ):
         
         BaseAE.__init__(self, model_config=model_config, decoder=decoder)
