@@ -16,7 +16,7 @@ from torch.utils.data.distributed import DistributedSampler
 from ...customexception import ModelError
 from ...data.datasets import BaseDataset, collate_dataset_output
 from ...models import BaseAE
-from ..trainer_utils import set_seed
+from ..trainer_utils import set_seed, get_cpu_stats_over_ranks
 from ..training_callbacks import (
     CallbackHandler,
     MetricConsolePrinterCallback,
@@ -372,8 +372,27 @@ class BaseTrainer:
 
         self.optimizer.zero_grad()
         loss.backward()
-        self.optimizer.step()
-
+        
+        # The method clip the gradient norm in place and return the unclipped norm
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(), self.training_config.grad_clip
+        )
+        
+        distortion_nans = torch.isnan(model_output['recon_loss']).sum()
+        rate_nans = torch.isnan(model_output['reg_loss']).sum()
+        
+        stats = {
+            'rate_nans': 0 if rate_nans == 0 else 1,
+            'distortion_nans': 0 if distortion_nans == 0 else 1,
+        }
+        
+        stats = get_cpu_stats_over_ranks(stats, self.world_size)
+        
+        if stats['rate_nans'] == 0 and stats['distortion_nans'] == 0 and (self.training_config.skip_treshold == -1 or grad_norm < self.training_config.skip_treshold):
+            self.optimizer.step()
+            
+        model_output['grad_norm'] = grad_norm
+            
     def _schedulers_step(self, metrics=None):
         if self.scheduler is None:
             pass
