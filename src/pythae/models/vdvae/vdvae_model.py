@@ -241,16 +241,11 @@ class VDVAE(BaseAE):
         enc_out = self.encoder(x)
         dec_out = self.decoder(enc_out['activations'])
         # dec_out.stats is a dictionnary containing the kl divergence for each block and sometime the latents
-        
-        if self.model_config.reconstruction_loss == "dmol":
-            recon_x = self.out_net.sample(dec_out.recon_x)
-            recon_x_for_loss = dec_out.recon_x
-        elif self.model_config.reconstruction_loss == "mse":
-            recon_x = self.out_net(dec_out.recon_x)
-            recon_x_for_loss = recon_x
-        else:
-            raise NotImplementedError("Only dmol reconstruction loss is supported for now.")
-        
+                
+        sample_out = self.sample(dec_out)
+        recon_x = sample_out.recon_x
+        recon_x_for_loss = sample_out.recon_x_for_loss
+
         loss, distortion, rate = self.loss_function(recon_x_for_loss, x, dec_out.stats)
         
         return ModelOutput(
@@ -281,27 +276,32 @@ class VDVAE(BaseAE):
         elbo = (distortion_per_pixel + rate_per_pixel).mean()
         return elbo, distortion_per_pixel.mean(), rate_per_pixel.mean()
     
-    def sample(self, n, t=None):
+    def sample(self, dec_out=None, n=6, t=None):
         """Sample from the VDVAE model.
         
         Args:
+            dec_out (ModelOutput): The output of the decoder. (If None, sample n unconditioned samples.)
             n (int): The number of samples to generate.
             t (torch.Tensor): The temperature of the sampling.
             
         Returns:
             torch.Tensor: The generated samples.
         """
-        dec_out = self.decoder.forward_uncond(n, t)
+        if not dec_out:
+            dec_out = self.decoder.forward_uncond(n, t)
         
         if self.model_config.reconstruction_loss == "dmol":
             recon_x = self.out_net.sample(dec_out.recon_x)
+            recon_x_for_loss = dec_out.recon_x
         elif self.model_config.reconstruction_loss == "mse":
             recon_x = self.out_net(dec_out.recon_x)
+            recon_x_for_loss = recon_x
         else:
             raise NotImplementedError(f"Reconstruction loss {self.model_config.reconstruction_loss} is not supported.")
         
         return ModelOutput(
-            recon_x=recon_x,
+            recon_x=(recon_x + 1) / 2, # Rescale images to [0, 1]
+            recon_x_for_loss=recon_x_for_loss,
         )
         
 if __name__ == "__name__":
