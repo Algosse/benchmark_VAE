@@ -16,7 +16,7 @@ from torch.utils.data.distributed import DistributedSampler
 from ...customexception import ModelError
 from ...data.datasets import BaseDataset, collate_dataset_output
 from ...models import BaseAE
-from ..trainer_utils import set_seed
+from ..trainer_utils import set_seed, get_cpu_stats_over_ranks
 from ..training_callbacks import (
     CallbackHandler,
     MetricConsolePrinterCallback,
@@ -372,7 +372,28 @@ class BaseTrainer:
 
         self.optimizer.zero_grad()
         loss.backward()
-        self.optimizer.step()
+        
+        # The method clip the gradient norm in place and return the unclipped norm
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(), self.training_config.grad_clip
+        )
+        
+        distortion_nans = torch.isnan(model_output['recon_loss']).sum()
+        rate_nans = torch.isnan(model_output['reg_loss']).sum()
+        
+        stats = {
+            'rate_nans': 0 if rate_nans == 0 else 1,
+            'distortion_nans': 0 if distortion_nans == 0 else 1,
+        }
+        if self.distributed:
+            stats = get_cpu_stats_over_ranks(stats, self.world_size)
+        
+        skip_updates = 1
+        if stats['rate_nans'] == 0 and stats['distortion_nans'] == 0 and (self.training_config.skip_treshold == -1 or grad_norm < self.training_config.skip_treshold):
+            self.optimizer.step()
+            skip_updates = 0
+            
+        return skip_updates, grad_norm.item()
 
     def _schedulers_step(self, metrics=None):
         if self.scheduler is None:
@@ -623,7 +644,7 @@ class BaseTrainer:
                     uses_ddp=self.distributed,
                 )
 
-            self._optimizers_step(model_output)
+            skip_updates, grad_norm = self._optimizers_step(model_output)
 
             loss = model_output.loss
 
@@ -635,6 +656,20 @@ class BaseTrainer:
             self.callback_handler.on_train_step_end(
                 training_config=self.training_config
             )
+            
+            step_metrics = {
+                'train_step_loss': loss.item(),
+                'train_step_grad_norm': grad_norm,
+                'train_step_skip_updates': skip_updates,
+            }
+            
+            self.callback_handler.on_log(
+                    self.training_config,
+                    step_metrics,
+                    logger=None,
+                    global_step=epoch,
+                    rank=self.rank,
+                )
 
         # Allows model updates if needed
         if self.distributed:

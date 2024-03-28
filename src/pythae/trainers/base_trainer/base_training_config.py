@@ -74,6 +74,8 @@ class BaseTrainerConfig(BaseConfig):
     master_addr: str = field(default="localhost")
     master_port: str = field(default="12345")
     amp: bool = False
+    grad_clip: float = 1000.0
+    skip_treshold: float = -1.0 # -1 means no skip
 
     def __post_init__(self):
         """Check compatibility and sets up distributed training"""
