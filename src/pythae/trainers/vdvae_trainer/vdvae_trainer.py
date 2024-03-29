@@ -41,9 +41,9 @@ class VDVAETrainer(BaseTrainer):
         
         # Here, we can not simply draw z and use it for the decoder as we have multiple latent spaces.
         if self.distributed:
-            generation = model.module.sample(min(inputs['data'].shape[0], 10)).recon_x.cpu().detach()
+            generation = model.module.sample(n=min(inputs['data'].shape[0], 10)).recon_x.cpu().detach()
         else:
-            generation = model.sample(min(inputs['data'].shape[0], 10)).recon_x.cpu().detach()
+            generation = model.sample(n=min(inputs['data'].shape[0], 10)).recon_x.cpu().detach()
         
         return (
             inputs['data'][: min(inputs['data'].shape[0], 10)],
