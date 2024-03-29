@@ -242,7 +242,7 @@ class VDVAE(BaseAE):
         dec_out = self.decoder(enc_out['activations'])
         # dec_out.stats is a dictionnary containing the kl divergence for each block and sometime the latents
                 
-        sample_out = self.sample(dec_out)
+        sample_out = self.sample(dec_out=dec_out)
         recon_x = sample_out.recon_x
         recon_x_for_loss = sample_out.recon_x_for_loss
 
