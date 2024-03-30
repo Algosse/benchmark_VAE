@@ -193,6 +193,11 @@ class AutoModel(nn.Module):
             from ..piwae import PIWAE
 
             model = PIWAE.load_from_folder(dir_path=dir_path)
+        
+        elif model_name == "VDVAEConfig":
+            from ..vdvae import VDVAE
+            
+            model = VDVAE.load_from_folder(dir_path=dir_path)
 
         else:
             raise NameError(
@@ -456,6 +461,13 @@ class AutoModel(nn.Module):
             from ..piwae import PIWAE
 
             model = PIWAE.load_from_hf_hub(
+                hf_hub_path=hf_hub_path, allow_pickle=allow_pickle
+            )
+            
+        elif model_name == "VDVAEConfig":
+            from ..vdvae import VDVAE
+            
+            model = VDVAE.load_from_hf_hub(
                 hf_hub_path=hf_hub_path, allow_pickle=allow_pickle
             )
 
