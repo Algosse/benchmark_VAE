@@ -180,6 +180,11 @@ class AutoConfig(BaseConfig):
 
             model_config = PIWAEConfig.from_json_file(json_path)
 
+        elif config_name == "VDVAEConfig":
+            from ..vdvae import VDVAEConfig
+            
+            model_config = VDVAEConfig.from_json_file(json_path)            
+
         else:
             raise NameError(
                 "Cannot reload automatically the model configuration... "
