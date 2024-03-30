@@ -632,6 +632,7 @@ class BaseTrainer:
         self.model.train()
 
         epoch_loss = 0
+        epoch_skip_updates = 0
 
         for inputs in self.train_loader:
             inputs = self._set_inputs_to_device(inputs)
@@ -645,20 +646,17 @@ class BaseTrainer:
                 )
 
             skip_updates, grad_norm = self._optimizers_step(model_output)
-
+            epoch_skip_updates += skip_updates
+            
             loss = model_output.loss
 
-            epoch_loss += loss.item()
-
-            if epoch_loss != epoch_loss:
-                raise ArithmeticError("NaN detected in train loss")
-
-            self.callback_handler.on_train_step_end(
-                training_config=self.training_config
-            )
+            if skip_updates == 0:
+                epoch_loss += loss.item()
             
             step_metrics = {
                 'train_step_loss': loss.item(),
+                'train_step_recon_loss': model_output.recon_loss.item(),
+                'train_step_reg_loss': model_output.reg_loss.item(),
                 'train_step_grad_norm': grad_norm,
                 'train_step_skip_updates': skip_updates,
             }
@@ -671,13 +669,17 @@ class BaseTrainer:
                     rank=self.rank,
                 )
 
+            self.callback_handler.on_train_step_end(
+                training_config=self.training_config
+            )
+
         # Allows model updates if needed
         if self.distributed:
             self.model.module.update()
         else:
             self.model.update()
 
-        epoch_loss /= len(self.train_loader)
+        epoch_loss /= (len(self.train_loader) - epoch_skip_updates)
 
         return epoch_loss
 
