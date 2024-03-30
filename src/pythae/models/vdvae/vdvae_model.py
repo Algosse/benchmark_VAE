@@ -1,3 +1,4 @@
+import os
 import itertools
 import numpy as np
 
@@ -214,6 +215,7 @@ class VDVAE(BaseAE):
         self.model_name = "VDVAE"
         
         self.model_config = model_config
+        self.use_default_encoder = False
         self.set_encoder(encoder)
         
         if model_config.reconstruction_loss == "dmol":
@@ -303,6 +305,41 @@ class VDVAE(BaseAE):
             recon_x=(recon_x + 1) / 2, # Rescale images to [0, 1]
             recon_x_for_loss=recon_x_for_loss,
         )
+    
+    @classmethod
+    def load_from_folder(cls, dir_path):
+        """Class method to be used to load the model from a specific folder
+
+        Args:
+            dir_path (str): The path where the model should have been be saved.
+
+        .. note::
+            This function requires the folder to contain:
+
+            - | a ``model_config.json`` and a ``model.pt`` if no custom architectures were provided
+
+            **or**
+
+            - | a ``model_config.json``, a ``model.pt`` and a ``encoder.pkl`` (resp.
+                ``decoder.pkl``) if a custom encoder (resp. decoder) was provided
+        """
+
+        """ TODO: Add the possibility to load custom encoder and decoder. Ideas:
+            - Find a way to save the encoder and decoder classes
+            - Load the encoder and decoder in pkl files    
+        """
+
+        model_config = VDVAEConfig.from_json_file(os.path.join(dir_path, 'model_config.json'))
+        
+        encoder = VDVAEEncoder(model_config)
+        decoder = VDVAEDecoder(model_config)
+        
+        model = VDVAE(model_config, encoder, decoder)
+        
+        state_dict = torch.load(os.path.join(dir_path, 'model.pt'))
+        model.load_state_dict(state_dict['model_state_dict'])
+
+        return model
         
 if __name__ == "__name__":
     
