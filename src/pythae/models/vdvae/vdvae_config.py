@@ -31,3 +31,4 @@ class VDVAEConfig(VAEConfig):
     bottleneck_multiple: float = 0.25
     no_bias_above: int = 64
     num_mixtures: int = 10
+    is_conditioned: bool = False
