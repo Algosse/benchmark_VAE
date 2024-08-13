@@ -610,6 +610,7 @@ class BaseTrainer:
         self.model.eval()
 
         epoch_loss = 0
+        epoch_nans = 0
 
         with self.amp_context:
             for inputs in self.eval_loader:
@@ -633,8 +634,11 @@ class BaseTrainer:
                     )
 
                 loss = model_output.loss
-
-                epoch_loss += loss.item()
+                
+                if torch.isnan(loss).sum():
+                    epoch_nans += 1
+                else:
+                    epoch_loss += loss.item()
 
                 if epoch_loss != epoch_loss:
                     raise ArithmeticError("NaN detected in eval loss")
@@ -643,7 +647,7 @@ class BaseTrainer:
                     training_config=self.training_config
                 )
 
-        epoch_loss /= len(self.eval_loader)
+        epoch_loss /= (len(self.eval_loader) - epoch_nans)
 
         return epoch_loss
 
