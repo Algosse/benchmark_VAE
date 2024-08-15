@@ -78,7 +78,7 @@ class DecBlock(nn.Module):
         kl = gaussian_analytical_kl(qm, pm, qv, pv)
         return z, x, kl, dict(
             pm=pm.detach(),
-            pv=pv.detact(),
+            pv=pv.detach(),
             qm=qm.detach(),
             qv=qv.detach()
         )
