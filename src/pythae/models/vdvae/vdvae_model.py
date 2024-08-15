@@ -183,7 +183,7 @@ class DecBlock(nn.Module):
         xs[self.base] = x
         if get_latents:
             return xs, dict(z=z).update(stats)
-        return xs
+        return xs, None
 
 class VDVAEDecoder(BaseDecoder):
 
