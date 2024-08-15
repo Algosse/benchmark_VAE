@@ -166,7 +166,7 @@ class DecBlock(nn.Module):
         x = self.resnet2(x)
         xs[self.base] = x
         if get_latents:
-            return xs, dict(z=z.detach(), kl=kl).update(stats)
+            return xs, dict(z=z.detach(), kl=kl, **stats)
         return xs, dict(kl=kl)
 
     def forward_uncond(self, xs, t=None, lvs=None, get_latents=False):
@@ -182,7 +182,7 @@ class DecBlock(nn.Module):
         x = self.resnet2(x)
         xs[self.base] = x
         if get_latents:
-            return xs, dict(z=z).update(stats)
+            return xs, dict(z=z, **stats)
         return xs, None
 
 class VDVAEDecoder(BaseDecoder):
