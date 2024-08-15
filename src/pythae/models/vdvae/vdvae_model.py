@@ -108,7 +108,12 @@ class DecBlock(nn.Module):
         
         z = draw_gaussian_diag_samples(qm, qv)
         kl = gaussian_analytical_kl(qm, pm, qv, pv)
-        return z, x, kl
+        return z, x, kl, dict(
+            pm=pm.detach(),
+            pv=pv.detact(),
+            qm=qm.detach(),
+            qv=qv.detach()
+        )
 
     def sample_uncond(self, x, t=None, lvs=None):
         n, c, h, w = x.shape
@@ -121,7 +126,10 @@ class DecBlock(nn.Module):
             if t is not None:
                 pv = pv + torch.ones_like(pv) * np.log(t)
             z = draw_gaussian_diag_samples(pm, pv)
-        return z, x
+        return z, x, dict(
+            pm=pm.detach(),
+            pv=pv.detach(),
+        )
     
     def compute_prior(self, x, prior_acts=None):
         if self.model_config.is_conditioned:
@@ -132,6 +140,7 @@ class DecBlock(nn.Module):
             pm, pv, xpp = feats[:, :self.zdim, ...], feats[:, self.zdim:self.zdim * 2, ...], feats[:, self.zdim * 2:, ...]
             x = x + xpp
         return pm, pv, x
+        
 
     def get_inputs(self, xs, activations, prior_activations=None):
         acts = activations[self.base]
@@ -152,15 +161,15 @@ class DecBlock(nn.Module):
         x, acts, prior_acts = self.get_inputs(xs, activations, prior_activations)
         if self.mixin is not None:
             x = x + F.interpolate(xs[self.mixin][:, :x.shape[1], ...], scale_factor=self.base // self.mixin)
-        z, x, kl = self.sample(x, acts, prior_acts)
+        z, x, kl, stats = self.sample(x, acts, prior_acts)
         x = x + self.z_fn(z)
         x = self.resnet2(x)
         xs[self.base] = x
         if get_latents:
-            return xs, dict(z=z.detach(), kl=kl)
+            return xs, dict(z=z.detach(), kl=kl).update(stats)
         return xs, dict(kl=kl)
 
-    def forward_uncond(self, xs, t=None, lvs=None):
+    def forward_uncond(self, xs, t=None, lvs=None, get_latents=False):
         try:
             x = xs[self.base]
         except KeyError:
@@ -168,10 +177,12 @@ class DecBlock(nn.Module):
             x = torch.zeros(dtype=ref.dtype, size=(ref.shape[0], self.widths[self.base], self.base, self.base), device=ref.device)
         if self.mixin is not None:
             x = x + F.interpolate(xs[self.mixin][:, :x.shape[1], ...], scale_factor=self.base // self.mixin)
-        z, x = self.sample_uncond(x, t, lvs=lvs)
+        z, x, stats = self.sample_uncond(x, t, lvs=lvs)
         x = x + self.z_fn(z)
         x = self.resnet2(x)
         xs[self.base] = x
+        if get_latents:
+            return xs, dict(z=z).update(stats)
         return xs
 
 class VDVAEDecoder(BaseDecoder):
@@ -213,7 +224,8 @@ class VDVAEDecoder(BaseDecoder):
             stats=stats
         )
 
-    def forward_uncond(self, n, t=None, y=None):
+    def forward_uncond(self, n, t=None, y=None, get_latents=False):
+        stats = []
         xs = {}
         for bias in self.bias_xs:
             xs[bias.shape[2]] = bias.repeat(n, 1, 1, 1)
@@ -222,25 +234,28 @@ class VDVAEDecoder(BaseDecoder):
                 temp = t[idx]
             except TypeError:
                 temp = t
-            xs = block.forward_uncond(xs, temp)
+            xs, block_stats = block.forward_uncond(xs, temp, get_latents=get_latents)
+            stats.append(block_stats)
         xs[self.model_config.input_dim[1]] = self.final_fn(xs[self.model_config.input_dim[1]])
         
         return ModelOutput(
             recon_x=xs[self.model_config.input_dim[1]],
-            stats=None,
+            stats=stats,
         )
 
-    def forward_manual_latents(self, n, latents, t=None):
+    def forward_manual_latents(self, n, latents, t=None, get_latents=False):
+        stats = []
         xs = {}
         for bias in self.bias_xs:
             xs[bias.shape[2]] = bias.repeat(n, 1, 1, 1)
         for block, lvs in itertools.zip_longest(self.dec_blocks, latents):
-            xs = block.forward_uncond(xs, t, lvs=lvs)
+            xs, block_stats = block.forward_uncond(xs, t, lvs=lvs, get_latents=get_latents)
+            stats.append(block_stats)
         xs[self.model_config.input_dim[1]] = self.final_fn(xs[self.model_config.input_dim[1]])
-        
+
         return ModelOutput(
             recon_x=xs[self.model_config.input_dim[1]],
-            stats=None,
+            stats=stats,
         )
 
 class VDVAE(BaseAE):
@@ -350,7 +365,7 @@ class VDVAE(BaseAE):
         elbo = (distortion_per_pixel + rate_per_pixel).mean()
         return elbo, distortion_per_pixel.mean(), rate_per_pixel.mean()
     
-    def sample(self, dec_out=None, n=6, t=None):
+    def sample(self, dec_out=None, n=6, t=None, get_latents=False):
         """Sample from the VDVAE model.
         
         Args:
@@ -362,7 +377,7 @@ class VDVAE(BaseAE):
             torch.Tensor: The generated samples.
         """
         if not dec_out:
-            dec_out = self.decoder.forward_uncond(n, t)
+            dec_out = self.decoder.forward_uncond(n, t, get_latents=get_latents)
         
         if self.model_config.reconstruction_loss == "dmol":
             recon_x = self.out_net.sample(dec_out.recon_x)
@@ -373,9 +388,15 @@ class VDVAE(BaseAE):
         else:
             raise NotImplementedError(f"Reconstruction loss {self.model_config.reconstruction_loss} is not supported.")
         
+        if get_latents:
+            stats = dec_out.stats
+        else:
+            stats = None
+
         return ModelOutput(
             recon_x=(recon_x + 1) / 2, # Rescale images to [0, 1]
             recon_x_for_loss=recon_x_for_loss,
+            stats=stats,
         )
     
     @classmethod
