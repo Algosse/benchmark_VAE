@@ -170,7 +170,7 @@ class DecBlock(nn.Module):
             x = x + F.interpolate(xs[self.mixin][:, :x.shape[1], ...], scale_factor=self.base // self.mixin)
         z, x = self.sample_uncond(x, t, lvs=lvs)
         x = x + self.z_fn(z)
-        x = self.resnet(x)
+        x = self.resnet2(x)
         xs[self.base] = x
         return xs
 
