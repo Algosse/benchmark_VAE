@@ -17,5 +17,7 @@ TBD: Add samplers for VDVAE
 
 from .vdvae_config import VDVAEConfig
 from .vdvae_model import VDVAE, VDVAEEncoder, VDVAEDecoder
+from .swin_transformer_config import SwinTransformerConfig
+from .swin_transformer_encoder import SwinTransformerEncoder
 
-__all__ = ["VDVAE", "VDVAEConfig", "VDVAEEncoder", "VDVAEDecoder"]
+__all__ = ["VDVAE", "VDVAEConfig", "VDVAEEncoder", "VDVAEDecoder", "SwinTransformerConfig", "SwinTransformerEncoder"]
