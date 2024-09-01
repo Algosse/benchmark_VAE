@@ -11,8 +11,8 @@ from functools import reduce, lru_cache
 from operator import mul
 from einops import rearrange
 
-from . import SwinTransformerConfig
-from . import VDVAEConfig
+from pythae.models.vdvae import SwinTransformerConfig, VDVAEConfig
+from pythae.models.base.base_utils import ModelOutput
 
 class Mlp(nn.Module):
     """ Multilayer perceptron."""
@@ -407,10 +407,12 @@ class BasicLayer(nn.Module):
             x = blk(x, attn_mask)
         x = x.view(B, D, H, W, -1)
 
+        x_at_res = x.clone() # keep the feature before downsample, will be used in the future
         if self.downsample is not None:
             x = self.downsample(x)
         x = rearrange(x, 'b d h w c -> b c d h w')
-        return x
+        x_at_res = rearrange(x_at_res, 'b d h w c -> b c d h w')
+        return x, x_at_res
 
 
 class PatchEmbed3D(nn.Module):
@@ -483,31 +485,34 @@ class SwinTransformerEncoder(nn.Module):
         n_embed (int): Number of channels of the output. Default: 3
     """
 
-    def __init__(self, model_config: VDVAEConfig, transformer_config: SwinTransformerConfig,
-                 embed_dim=96,
-                 depths=[2, 2, 6, 2],
-                 num_heads=[3, 6, 12, 24],
-                 window_size=(2,7,7),
-                 mlp_ratio=4.,
-                 qkv_bias=True,
-                 qk_scale=None,
-                 drop_rate=0.,
-                 attn_drop_rate=0.,
-                 drop_path_rate=0.2,
-                 norm_layer=nn.LayerNorm,
-                 patch_norm=False,
-                 frozen_stages=-1,
-                 use_checkpoint=False,
-                 sequence_to_image='mean',
-                 output_type='image',
-                 n_embed=3):
+    def __init__(self, model_config: VDVAEConfig, transformer_config: SwinTransformerConfig):
         super().__init__()
 
         res = model_config.input_dim[1]
+        depths = transformer_config.depths
+        num_heads = transformer_config.num_heads
+        window_size = transformer_config.window_size
+        mlp_ratio = transformer_config.mlp_ratio
+        qkv_bias = transformer_config.qkv_bias
+        qk_scale = transformer_config.qk_scale
+        drop_rate = transformer_config.drop_rate
+        attn_drop_rate = transformer_config.attn_drop_rate
+        drop_path_rate = transformer_config.drop_path_rate
+        patch_norm = transformer_config.patch_norm
+        frozen_stages = transformer_config.frozen_stages
+        use_checkpoint = transformer_config.use_checkpoint
+        sequence_to_image = transformer_config.sequence_to_image
+        output_type = transformer_config.output_type
+        n_embed = transformer_config.n_embed
+        
+        if transformer_config.norm_layer == "layernorm":
+            norm_layer = nn.LayerNorm
+        else:
+            raise NotImplementedError(f"Unknown norm_layer: {transformer_config.norm_layer}")
         
         self.pretrained = None
         self.num_layers = len(depths)
-        self.embed_dim = model_config.width
+        self.embed_dim = transformer_config.embed_dim
         self.patch_norm = patch_norm
         self.frozen_stages = frozen_stages
         self.window_size = window_size
@@ -517,7 +522,7 @@ class SwinTransformerEncoder(nn.Module):
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed3D(
-            patch_size=self.patch_size, in_chans=model_config.input_dim[0], embed_dim=embed_dim,
+            patch_size=self.patch_size, in_chans=model_config.input_dim[0], embed_dim=self.embed_dim,
             norm_layer=norm_layer if self.patch_norm else None)
 
         self.pos_drop = nn.Dropout(p=drop_rate)
@@ -529,7 +534,7 @@ class SwinTransformerEncoder(nn.Module):
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
             layer = BasicLayer(
-                dim=int(embed_dim * 2**i_layer),
+                dim=int(self.embed_dim * 2**i_layer),
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=window_size,
@@ -544,9 +549,15 @@ class SwinTransformerEncoder(nn.Module):
                 use_checkpoint=use_checkpoint)
             self.layers.append(layer)
 
-        self.num_features = int(embed_dim * 2**(self.num_layers-1))
+        self.num_features = int(self.embed_dim * 2**(self.num_layers-1))
 
         # add a norm layer for each output
+        self.norm_layers = {}
+        for i in range(self.num_layers):
+            layer_res = res // (2 ** i)
+            num_features = int(self.embed_dim * 2**i)
+            self.norm_layers[layer_res] = norm_layer(num_features)
+        
         self.norm = norm_layer(self.num_features)
 
         self._freeze_stages()
@@ -560,7 +571,7 @@ class SwinTransformerEncoder(nn.Module):
             raise NotImplementedError(f"Unknown output_type: {self.output_type}")
         
         if self.sequence_to_image == "class_token":
-            self.class_token = nn.Parameter(torch.rand(embed_dim, 1, res//4, res//4))
+            self.class_token = nn.Parameter(torch.rand(self.embed_dim, 1, res//4, res//4))
             trunc_normal_(self.class_token, std=.02)
 
     def _freeze_stages(self):
@@ -636,19 +647,27 @@ class SwinTransformerEncoder(nn.Module):
 
         x = self.pos_drop(x)
         
+        activations = {}
+        
         if self.sequence_to_image == 'class_token':
             x = torch.cat([self.class_token.repeat(x.shape[0], 1, 1, 1, 1), x], dim=2)
 
         for layer in self.layers:
-            x = layer(x.contiguous())
+            x, x_at_res = layer(x.contiguous())
+            
+            x_at_res = rearrange(x_at_res, 'n c d h w -> n d h w c')
+            x_at_res = self.norm_layers[x_at_res.shape[3]](x_at_res)
+            x_at_res = rearrange(x_at_res, 'n d h w c -> n c d h w')
+            
+            x_at_res = self.get_output_from_sequence(x_at_res)
+            
+            activations[x_at_res.shape[3]] = x_at_res
 
-        x = rearrange(x, 'n c d h w -> n d h w c')
-        x = self.norm(x)
-        x = rearrange(x, 'n d h w c -> n c d h w')
+        out = ModelOutput(
+            activations=activations,
+        )
 
-        x = self.get_output_from_sequence(x)
-
-        return x
+        return out
     
     def get_output_from_sequence(self, act):
         """ 
@@ -680,7 +699,7 @@ class SwinTransformerEncoder(nn.Module):
         else:
             raise ValueError(f"Unknown sequence_to_image value: {self.sequence_to_image}")
         
-        out = self.output_layer(out)
+        #out = self.output_layer(out)
         
         return out
 
@@ -690,35 +709,27 @@ class SwinTransformerEncoder(nn.Module):
         self._freeze_stages()
 
 if __name__ == '__main__':
-
-    transformer = SwinTransformerEncoder(
-        patch_size=(2,4,4),
-        in_chans=3,
-        res=256,
-        embed_dim=96,
-        depths=[2],
-        num_heads=[2],
-        window_size=(2,7,7),
-        mlp_ratio=4.,
-        qkv_bias=True,
-        qk_scale=None,
-        drop_rate=0.,
-        attn_drop_rate=0.,
-        drop_path_rate=0.2,
-        norm_layer=nn.LayerNorm,
-        patch_norm=False,
-        frozen_stages=-1,
-        use_checkpoint=False,
-        sequence_to_image='class_token',
-        output_type='image',
-        n_embed=3)
     
-    x = torch.randn(8, 3, 10, 256, 256)
+    RES = 64
+    
+    transformer_config = SwinTransformerConfig(
+        embed_dim=6,
+    )
+    model_config = VDVAEConfig(
+        input_dim=(3, RES, RES),
+    )
+
+    transformer = SwinTransformerEncoder(model_config, transformer_config)
+    
+    print("Total Parameters:", sum([p.numel() for p in transformer.parameters()]))
+    
+    x = torch.randn(8, 3, 10, RES, RES)
 
     out = transformer(x)
 
-    print(out.shape) 
-
+    acts = out.activations
+    for res, act in acts.items():
+        print(res, act.shape)
     # print transformer parameters
 
-    print("Total Parameters:", sum([p.numel() for p in transformer.parameters()]))
+    
