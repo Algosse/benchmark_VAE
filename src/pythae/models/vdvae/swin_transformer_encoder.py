@@ -13,6 +13,7 @@ from einops import rearrange
 
 from pythae.models.vdvae import SwinTransformerConfig, VDVAEConfig
 from pythae.models.base.base_utils import ModelOutput
+from pythae.models.nn.base_architectures import BaseEncoder
 
 class Mlp(nn.Module):
     """ Multilayer perceptron."""
@@ -457,7 +458,7 @@ class PatchEmbed3D(nn.Module):
 
         return x
 
-class SwinTransformerEncoder(nn.Module):
+class SwinTransformerEncoder(BaseEncoder):
     """ Swin Transformer backbone.
         A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows`  -
           https://arxiv.org/pdf/2103.14030
@@ -485,8 +486,11 @@ class SwinTransformerEncoder(nn.Module):
         n_embed (int): Number of channels of the output. Default: 3
     """
 
-    def __init__(self, model_config: VDVAEConfig, transformer_config: SwinTransformerConfig):
+    def __init__(self, model_config: VDVAEConfig, transformer_config: SwinTransformerConfig, is_prior=False):
         super().__init__()
+        
+        self.model_config = model_config
+        self.transformer_config = transformer_config
 
         res = model_config.input_dim[1]
         depths = transformer_config.depths
@@ -519,6 +523,7 @@ class SwinTransformerEncoder(nn.Module):
         self.patch_size = list(transformer_config.patch_size)
         self.sequence_to_image = sequence_to_image
         self.output_type = output_type
+        self.is_prior = is_prior
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed3D(
@@ -641,8 +646,17 @@ class SwinTransformerEncoder(nn.Module):
         del checkpoint
         torch.cuda.empty_cache()
 
-    def forward(self, x):
+    def forward(self, x, y=None):
         """Forward function."""
+    
+        if self.model_config.is_conditioned and not self.is_prior:
+            if y is None:
+                raise ValueError("The model is conditioned. The condition y is expected for the encoder.")
+            else:
+                # Add one dimension to x along the 3rd axis
+                x = x.unsqueeze(2)
+                x = torch.cat([x, y], dim=2)
+        
         x = self.patch_embed(x)
 
         x = self.pos_drop(x)
