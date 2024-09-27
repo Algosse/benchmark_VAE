@@ -439,7 +439,11 @@ class VDVAE(BaseAE):
         encoder = VDVAEEncoder(model_config)
         decoder = VDVAEDecoder(model_config)
         
-        model = VDVAE(model_config, encoder, decoder)
+        if model_config.is_conditioned:
+            prior_encoder = VDVAEEncoder(model_config, is_prior=True)
+            model = VDVAE(model_config, encoder, decoder, prior_encoder)
+        else:
+            model = VDVAE(model_config, encoder, decoder)
         
         state_dict = torch.load(os.path.join(dir_path, 'model.pt'))
         model.load_state_dict(state_dict['model_state_dict'])

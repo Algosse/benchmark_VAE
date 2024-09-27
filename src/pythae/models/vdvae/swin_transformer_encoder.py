@@ -557,26 +557,27 @@ class SwinTransformerEncoder(BaseEncoder):
         self.num_features = int(self.embed_dim * 2**(self.num_layers-1))
 
         # add a norm layer for each output
-        self.norm_layers = {}
+        self.norm_layers = nn.ModuleDict()
         for i in range(self.num_layers):
             layer_res = res // (2 ** i)
             num_features = int(self.embed_dim * 2**i)
-            self.norm_layers[layer_res] = norm_layer(num_features)
+            self.norm_layers[str(layer_res)] = norm_layer(num_features)
         
-        self.norm = norm_layer(self.num_features)
+        #self.norm = norm_layer(self.num_features)
 
         self._freeze_stages()
         
         # Define output layer
         if self.output_type == 'image':
-            self.output_layer = nn.Conv2d(self.num_features, n_embed, kernel_size=1)
+            pass
+            #self.output_layer = nn.Conv2d(self.num_features, n_embed, kernel_size=1)
         elif self.output_type == 'embed':
             raise NotImplementedError(f"Embed output not implemented yet")
         else:
             raise NotImplementedError(f"Unknown output_type: {self.output_type}")
         
         if self.sequence_to_image == "class_token":
-            self.class_token = nn.Parameter(torch.rand(self.embed_dim, 1, res//4, res//4))
+            self.class_token = nn.Parameter(torch.rand(self.embed_dim, 1, res, res))
             trunc_normal_(self.class_token, std=.02)
 
     def _freeze_stages(self):
@@ -670,7 +671,7 @@ class SwinTransformerEncoder(BaseEncoder):
             x, x_at_res = layer(x.contiguous())
             
             x_at_res = rearrange(x_at_res, 'n c d h w -> n d h w c')
-            x_at_res = self.norm_layers[x_at_res.shape[3]](x_at_res)
+            x_at_res = self.norm_layers[str(x_at_res.shape[3])](x_at_res)
             x_at_res = rearrange(x_at_res, 'n d h w c -> n c d h w')
             
             x_at_res = self.get_output_from_sequence(x_at_res)

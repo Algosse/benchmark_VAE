@@ -1,4 +1,4 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 
 from pydantic.dataclasses import dataclass
 from typing_extensions import Literal
@@ -12,22 +12,22 @@ class SwinTransformerConfig(BaseConfig):
     Parameters:
     """
     
-    pretrained = None
+    depths: Union[Tuple[int, ...], None]
+    num_heads: Union[Tuple[int, ...], None]
+    pretrained: bool = None
     patch_size: Tuple[int, int, int] = (2, 1, 1)
     embed_dim: int = 96
-    depths=[2, 2, 6, 2]
-    num_heads= [3, 3, 3, 3] # [3, 6, 12, 24]
-    window_size=(2,7,7)
-    mlp_ratio=4.
-    qkv_bias=True
-    qk_scale=None
-    drop_rate=0.
-    attn_drop_rate=0.
-    drop_path_rate=0.2
+    window_size = (2,7,7)
+    mlp_ratio: float = 4.
+    qkv_bias: bool = True
+    qk_scale: Optional[float] = None
+    drop_rate: float = 0.
+    attn_drop_rate: float = 0.
+    drop_path_rate: float = 0.2
     norm_layer: Literal['layernorm'] = "layernorm"
-    patch_norm=False
-    frozen_stages=-1
-    use_checkpoint=False
-    sequence_to_image='mean'
-    output_type='image'
-    n_embed=3
+    patch_norm: bool = False
+    frozen_stages: int = -1
+    use_checkpoint: bool = False
+    sequence_to_image: str = 'mean'
+    output_type: str = 'image'
+    n_embed: int = 3
